@@ -7,7 +7,13 @@ import {
   FaPlay, FaPause, FaBolt, FaCamera, FaMicrophone,
   FaTimes, FaBars, FaImage, FaMapMarkerAlt, FaSpinner
 } from 'react-icons/fa';
+import { UAE_WORKSHOPS } from '../data/workshops';
 import './ChatPage.css';
+
+// ── Session memory helpers ─────────────────────────────────
+const MEM_KEY = 'car_ai_session';
+const loadMemory = () => { try { return JSON.parse(localStorage.getItem(MEM_KEY) || '{}'); } catch { return {}; } };
+const saveMemory = (patch) => { try { localStorage.setItem(MEM_KEY, JSON.stringify({ ...loadMemory(), ...patch })); } catch {} };
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GROQ_BASE    = 'https://api.groq.com/openai/v1';
@@ -48,16 +54,16 @@ export default function ChatPage() {
   const [inputText,     setInputText]     = useState('');
   const [isLoading,     setIsLoading]     = useState(false);
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
-  const [voiceEnabled,  setVoiceEnabled]  = useState(true);
-  const [voiceSpeed,    setVoiceSpeed]    = useState(1.7);
+  const [voiceEnabled,  setVoiceEnabled]  = useState(() => loadMemory().voiceEnabled ?? true);
+  const [voiceSpeed,    setVoiceSpeed]    = useState(() => loadMemory().voiceSpeed   ?? 1.7);
   const [isPlaying,     setIsPlaying]     = useState(false);
   const [isSpeaking,    setIsSpeaking]    = useState(false);
   const [isListening,   setIsListening]   = useState(false);
   const [sttSupported,  setSttSupported]  = useState(true);
-  const [imagePreview,  setImagePreview]  = useState(null); // base64 data URL
-  const [imageBase64,   setImageBase64]   = useState(null); // base64 string only (no prefix)
+  const [imagePreview,  setImagePreview]  = useState(null);
+  const [imageBase64,   setImageBase64]   = useState(null);
   const [locLoading,    setLocLoading]    = useState(false);
-  const [detectedEmirate, setDetectedEmirate] = useState(null);
+  const [detectedEmirate, setDetectedEmirate] = useState(() => loadMemory().emirate || null);
   const [metrics, setMetrics] = useState({
     lastResponseTime: 0,
     avgResponseTime:  0,
@@ -79,6 +85,11 @@ export default function ChatPage() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) setSttSupported(false);
   }, []);
+
+  // ── Persist preferences to session memory ──────────────────
+  useEffect(() => { saveMemory({ voiceEnabled }); }, [voiceEnabled]);
+  useEffect(() => { saveMemory({ voiceSpeed });   }, [voiceSpeed]);
+  useEffect(() => { if (detectedEmirate) saveMemory({ emirate: detectedEmirate }); }, [detectedEmirate]);
 
   // ── SSE stream reader ──────────────────────────────────────
   const readSSEStream = async (response, onToken) => {
@@ -392,35 +403,16 @@ export default function ChatPage() {
     return json.elements || [];
   };
 
-  const fetchAIWorkshops = async (emirate, lat, lon) => {
-    const prompt = `List the top 5 best-known car repair workshops in ${emirate}, UAE (near coordinates ${lat.toFixed(3)},${lon.toFixed(3)}).
-
-For each workshop provide EXACTLY this format:
-**[Workshop Name]**
-📍 Area: [neighbourhood/district]
-📞 Phone: [phone number or "Call directory"]
-🗺️ [Map](https://maps.google.com/?q=[workshop+name]+${emirate}+UAE)
-💰 Avg Price: [AED range for scratch fix | dent repair | general service]
-
-After the list, add one line: "💡 Tip: [one sentence UAE insurance/repair advice]"`;
-
-    const response = await fetch(`${GROQ_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user',   content: prompt },
-        ],
-        stream: false,
-      }),
-    });
-    const json = await response.json();
-    return json.choices?.[0]?.message?.content || '';
+  const buildCuratedSection = (emirate) => {
+    const list = UAE_WORKSHOPS[emirate] || UAE_WORKSHOPS['UAE'];
+    const lines = list.map((w, i) =>
+      `**${i + 1}. ${w.name}**\n` +
+      `📍 ${w.area}\n` +
+      `📞 ${w.phone}\n` +
+      `🗺️ [Open in Maps](${w.map})\n` +
+      `💰 ${w.price}`
+    );
+    return `### 🔧 Top Car Workshops in ${emirate}\n\n${lines.join('\n\n')}`;
   };
 
   const handleFindWorkshops = async () => {
@@ -441,59 +433,44 @@ After the list, add one line: "💡 Tip: [one sentence UAE insurance/repair advi
         const emirate = detectEmirate(lat, lon);
         setDetectedEmirate(emirate);
 
-        // Add placeholder message
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `📍 Detected: **${emirate}**\n\nFinding nearby workshops + AI recommendations…`,
+          content: `📍 Detected: **${emirate}**\n\nSearching nearby…`,
         }]);
 
-        try {
-          // Run OSM + AI in parallel
-          const [shops, aiText] = await Promise.all([
-            fetchNearbyWorkshops(lat, lon).catch(() => []),
-            fetchAIWorkshops(emirate, lat, lon).catch(() => ''),
-          ]);
+        // Run OSM + curated in parallel
+        const shops = await fetchNearbyWorkshops(lat, lon).catch(() => []);
 
-          let osmSection = '';
-          if (shops.length) {
-            const named = shops.filter(s => s.tags?.name || s.tags?.['name:en']);
-            const top   = named.length ? named : shops;
-            const lines = top.slice(0, 5).map((s, i) => {
-              const name    = s.tags?.name || s.tags?.['name:en'] || 'Workshop';
-              const street  = s.tags?.['addr:street'] || s.tags?.['addr:city'] || '';
-              const phone   = s.tags?.phone || s.tags?.['contact:phone'] || s.tags?.['contact:mobile'] || '';
-              const slat    = s.lat ?? s.center?.lat;
-              const slon    = s.lon ?? s.center?.lon;
-              const mapsUrl = slat ? `https://maps.google.com/?q=${slat},${slon}` : `https://maps.google.com/?q=${encodeURIComponent(name + ' ' + emirate)}`;
-              return `${i + 1}. **${name}**${street ? ` · ${street}` : ''}\n   ${phone ? `📞 ${phone} · ` : ''}🗺️ [Open in Maps](${mapsUrl})`;
-            });
-            osmSection = `### 📡 Nearest Workshops (OpenStreetMap)\n${lines.join('\n\n')}`;
-          }
-
-          const aiSection = aiText ? `### 🤖 Top Workshops in ${emirate} (AI)\n${aiText}` : '';
-
-          const content = [osmSection, aiSection]
-            .filter(Boolean)
-            .join('\n\n---\n\n') || `Could not find workshops near you right now. Try: *"Best workshops in ${emirate}"*`;
-
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[updated.length - 1] = { role: 'assistant', content };
-            return updated;
+        let osmSection = '';
+        if (shops.length) {
+          const named = shops.filter(s => s.tags?.name || s.tags?.['name:en']);
+          const top   = (named.length ? named : shops).slice(0, 3);
+          const lines = top.map((s, i) => {
+            const name    = s.tags?.name || s.tags?.['name:en'] || 'Workshop';
+            const street  = s.tags?.['addr:street'] || s.tags?.['addr:city'] || '';
+            const phone   = s.tags?.phone || s.tags?.['contact:phone'] || s.tags?.['contact:mobile'] || '—';
+            const slat    = s.lat ?? s.center?.lat;
+            const slon    = s.lon ?? s.center?.lon;
+            const mapsUrl = slat
+              ? `https://maps.google.com/?q=${slat},${slon}`
+              : `https://www.google.com/maps/search/${encodeURIComponent(name + ' ' + emirate)}`;
+            return `**${i + 1}. ${name}**\n📍 ${street || emirate}\n📞 ${phone}\n🗺️ [Open in Maps](${mapsUrl})`;
           });
-
-        } catch {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: `📍 Location: **${emirate}**\n\nCould not load workshop data. Ask me: *"Top workshops in ${emirate}"*`,
-            };
-            return updated;
-          });
-        } finally {
-          setLocLoading(false);
+          osmSection = `### 📡 Closest Workshops (GPS)\n\n${lines.join('\n\n')}\n\n---\n\n`;
         }
+
+        const curatedSection = buildCuratedSection(emirate);
+        const tip = '\n\n> 💡 **Tip:** For repairs under AED 1,500 it\'s usually cheaper to pay out-of-pocket than claim insurance (avoids premium hike).';
+
+        const content = osmSection + curatedSection + tip;
+
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: 'assistant', content };
+          return updated;
+        });
+
+        setLocLoading(false);
       },
       (err) => {
         setLocLoading(false);
