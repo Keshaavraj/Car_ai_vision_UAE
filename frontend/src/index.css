@@ -1,0 +1,19 @@
+:root {
+  --red:    #c0392b;
+  --red2:   #e74c3c;
+  --gold:   #D4AF37;
+  --gold2:  #F5CC4A;
+  --navy:   #060d1a;
+  --navy2:  #0a1628;
+  --panel:  rgba(10, 22, 40, 0.92);
+  --glass:  rgba(255,255,255,0.04);
+  --border: rgba(192, 57, 43, 0.25);
+  --text:   #e8eaf0;
+  --muted:  #8899aa;
+}
+
+html { scroll-behavior: smooth; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--navy2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
