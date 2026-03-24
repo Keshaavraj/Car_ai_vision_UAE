@@ -370,14 +370,17 @@ export default function ChatPage() {
 
   const fetchNearbyWorkshops = async (lat, lon) => {
     const query = `
-      [out:json][timeout:20];
+      [out:json][timeout:25];
       (
-        node["amenity"="car_repair"](around:10000,${lat},${lon});
-        way["amenity"="car_repair"](around:10000,${lat},${lon});
-        node["shop"="car_repair"](around:10000,${lat},${lon});
-        node["amenity"="vehicle_inspection"](around:10000,${lat},${lon});
+        node["amenity"="car_repair"](around:15000,${lat},${lon});
+        way["amenity"="car_repair"](around:15000,${lat},${lon});
+        node["shop"="car_repair"](around:15000,${lat},${lon});
+        way["shop"="car_repair"](around:15000,${lat},${lon});
+        node["amenity"="vehicle_inspection"](around:15000,${lat},${lon});
+        node["craft"="car_repair"](around:15000,${lat},${lon});
+        node["name"~"workshop|garage|repair|service|auto|motors",i]["amenity"!="fuel"](around:15000,${lat},${lon});
       );
-      out center 12;
+      out center 20;
     `.trim();
 
     const res  = await fetch('https://overpass-api.de/api/interpreter', {
@@ -387,6 +390,37 @@ export default function ChatPage() {
     });
     const json = await res.json();
     return json.elements || [];
+  };
+
+  const fetchAIWorkshops = async (emirate, lat, lon) => {
+    const prompt = `List the top 5 best-known car repair workshops in ${emirate}, UAE (near coordinates ${lat.toFixed(3)},${lon.toFixed(3)}).
+
+For each workshop provide EXACTLY this format:
+**[Workshop Name]**
+📍 Area: [neighbourhood/district]
+📞 Phone: [phone number or "Call directory"]
+🗺️ [Map](https://maps.google.com/?q=[workshop+name]+${emirate}+UAE)
+💰 Avg Price: [AED range for scratch fix | dent repair | general service]
+
+After the list, add one line: "💡 Tip: [one sentence UAE insurance/repair advice]"`;
+
+    const response = await fetch(`${GROQ_BASE}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user',   content: prompt },
+        ],
+        stream: false,
+      }),
+    });
+    const json = await response.json();
+    return json.choices?.[0]?.message?.content || '';
   };
 
   const handleFindWorkshops = async () => {
@@ -407,49 +441,53 @@ export default function ChatPage() {
         const emirate = detectEmirate(lat, lon);
         setDetectedEmirate(emirate);
 
+        // Add placeholder message
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `📍 Detected location: **${emirate}** (${lat.toFixed(4)}, ${lon.toFixed(4)})\n\nSearching for nearby car workshops…`,
+          content: `📍 Detected: **${emirate}**\n\nFinding nearby workshops + AI recommendations…`,
         }]);
 
         try {
-          const shops = await fetchNearbyWorkshops(lat, lon);
+          // Run OSM + AI in parallel
+          const [shops, aiText] = await Promise.all([
+            fetchNearbyWorkshops(lat, lon).catch(() => []),
+            fetchAIWorkshops(emirate, lat, lon).catch(() => ''),
+          ]);
 
-          if (!shops.length) {
-            setMessages(prev => {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
-                role: 'assistant',
-                content: `📍 **${emirate}** — No car repair shops found within 10 km via OpenStreetMap.\n\nTry searching Google Maps for "car workshop near me" or ask me about well-known workshops in ${emirate}.`,
-              };
-              return updated;
-            });
-          } else {
-            const lines = shops.slice(0, 10).map((s, i) => {
-              const name    = s.tags?.name || s.tags?.['name:en'] || 'Unnamed Workshop';
-              const street  = s.tags?.['addr:street'] || '';
-              const phone   = s.tags?.phone || s.tags?.['contact:phone'] || '';
+          let osmSection = '';
+          if (shops.length) {
+            const named = shops.filter(s => s.tags?.name || s.tags?.['name:en']);
+            const top   = named.length ? named : shops;
+            const lines = top.slice(0, 5).map((s, i) => {
+              const name    = s.tags?.name || s.tags?.['name:en'] || 'Workshop';
+              const street  = s.tags?.['addr:street'] || s.tags?.['addr:city'] || '';
+              const phone   = s.tags?.phone || s.tags?.['contact:phone'] || s.tags?.['contact:mobile'] || '';
               const slat    = s.lat ?? s.center?.lat;
               const slon    = s.lon ?? s.center?.lon;
-              const mapsUrl = slat ? `https://maps.google.com/?q=${slat},${slon}` : '';
-              return `${i + 1}. **${name}**${street ? ` — ${street}` : ''}${phone ? ` · 📞 ${phone}` : ''}${mapsUrl ? ` · [Map](${mapsUrl})` : ''}`;
+              const mapsUrl = slat ? `https://maps.google.com/?q=${slat},${slon}` : `https://maps.google.com/?q=${encodeURIComponent(name + ' ' + emirate)}`;
+              return `${i + 1}. **${name}**${street ? ` · ${street}` : ''}\n   ${phone ? `📞 ${phone} · ` : ''}🗺️ [Open in Maps](${mapsUrl})`;
             });
-
-            setMessages(prev => {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
-                role: 'assistant',
-                content: `📍 **Nearby Car Workshops in ${emirate}** (within 10 km)\n\n${lines.join('\n')}\n\n*Data from OpenStreetMap. Call ahead to confirm hours and specialisation.*`,
-              };
-              return updated;
-            });
+            osmSection = `### 📡 Nearest Workshops (OpenStreetMap)\n${lines.join('\n\n')}`;
           }
+
+          const aiSection = aiText ? `### 🤖 Top Workshops in ${emirate} (AI)\n${aiText}` : '';
+
+          const content = [osmSection, aiSection]
+            .filter(Boolean)
+            .join('\n\n---\n\n') || `Could not find workshops near you right now. Try: *"Best workshops in ${emirate}"*`;
+
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: 'assistant', content };
+            return updated;
+          });
+
         } catch {
           setMessages(prev => {
             const updated = [...prev];
             updated[updated.length - 1] = {
               role: 'assistant',
-              content: `📍 Location detected: **${emirate}**\n\nCould not load workshop data right now (OpenStreetMap timeout). Try asking me: *"Best workshops in ${emirate} for my car brand"*`,
+              content: `📍 Location: **${emirate}**\n\nCould not load workshop data. Ask me: *"Top workshops in ${emirate}"*`,
             };
             return updated;
           });
