@@ -12,31 +12,31 @@
 
 **Product Overview — entry point with live model indicator, damage severity samples, and direct access to the AI assistant**
 
-![Product Overview](assets/Screenshot 2026-03-25 103524.png)
+<img src="assets/screenshot_overview.png" alt="Product Overview" width="100%"/>
 
 ---
 
 **Three-Step Workflow — snap or speak, AI analyses, receive cost estimate and repair plan**
 
-![Three-Step Workflow](assets/Screenshot 2026-03-25 103650.png)
+<img src="assets/screenshot_workflow.png" alt="Three-Step Workflow" width="100%"/>
 
 ---
 
 **Capability Overview — eight core features including camera vision, voice I/O, AED cost estimation, insurance guidance, and live workshop discovery**
 
-![Capability Overview](assets/Screenshot 2026-03-25 103720.png)
+<img src="assets/screenshot_features.png" alt="Capability Overview" width="100%"/>
 
 ---
 
 **AI Assistant Interface — performance metrics panel on the left (response latency, token count), active model indicators, voice speed control, and five domain-specific quick prompts**
 
-![AI Assistant Interface](assets/Screenshot 2026-03-25 103807.png)
+<img src="assets/screenshot_assistant.png" alt="AI Assistant Interface" width="100%"/>
 
 ---
 
 **Live Damage Analysis — Vision LLM output for an uploaded car image: structured assessment with part identification, severity grading, AED cost range, and curated workshop recommendations by emirate**
 
-![Live Damage Analysis](assets/Screenshot 2026-03-25 103921.png)
+<img src="assets/screenshot_analysis.png" alt="Live Damage Analysis" width="100%"/>
 
 ---
 
@@ -46,7 +46,7 @@ Fully responsive across all screen sizes. Camera and microphone inputs are acces
 
 <table>
   <tr>
-    <td align="center"><img src="assets/mobile version landing.png" width="220"/></td>
+    <td align="center"><img src="assets/mobile_landing.png" width="220"/></td>
     <td align="center"><img src="assets/mobile_chat_page.png" width="220"/></td>
     <td align="center"><img src="assets/mobile_side_bar.png" width="220"/></td>
   </tr>
