@@ -2,7 +2,7 @@
 
 > A production-grade, multimodal AI assistant for car damage assessment, repair cost estimation, and workshop discovery across the UAE — built with Vision LLMs, real-time streaming, and voice-first interaction.
 
-**Live Demo:** [https://kesaavraj.github.io/Car_ai_vision_UAE](https://kesaavraj.github.io/Car_ai_vision_UAE)
+**Live Demo:** [https://Keshaavraj.github.io/Car_ai_vision_UAE](https://Keshaavraj.github.io/Car_ai_vision_UAE)
 
 ---
 
@@ -246,7 +246,7 @@ Car_ai_vision_UAE/
 
 ```bash
 # 1. Clone
-git clone https://github.com/kesaavraj/Car_ai_vision_UAE.git
+git clone https://github.com/Keshaavraj/Car_ai_vision_UAE.git
 cd Car_ai_vision_UAE
 
 # 2. Frontend
@@ -332,4 +332,4 @@ SOFTWARE.
 
 ## Author
 
-**Kesavan** — [GitHub](https://github.com/kesaavraj)
+**Kesavan** — [GitHub](https://github.com/Keshaavraj)
